@@ -1,9 +1,9 @@
-# matrixschema
+# matrix-fn-schema
 
 Convert Python function signatures (type annotations + docstrings) into OpenAI-compatible JSON Schema (tool call format).
 
 ```python
-from src.matrixschema import build_json_schema
+from matrix_fn_schema import build_json_schema
 
 
 def get_weather(city: str, units: Literal["metric", "imperial"] = "metric") -> str:
