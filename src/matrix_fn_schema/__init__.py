@@ -1,5 +1,5 @@
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
-from matrix_fn_schema.schema import build_json_schema
+from .schema import build_json_schema
 
 __all__ = ["build_json_schema"]

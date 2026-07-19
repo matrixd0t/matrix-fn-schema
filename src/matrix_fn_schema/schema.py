@@ -20,13 +20,6 @@ _PRIMITIVES: dict[type, str] = {
 }
 
 
-def _parse_param_docs(fn: AsyncOrSyncFunction) -> dict[str, str]:
-    return {
-        p.arg_name: p.description or ''
-        for p in _parse_docstring(inspect.getdoc(fn) or '').params
-    }
-
-
 def _get_union_args(annotation: Any) -> tuple[Any, ...] | None:
     """
     Returns Union/Optional/X|Y arguments, or None if not a Union.
@@ -45,12 +38,12 @@ def _annotation_to_schema(annotation: Any, _seen: set | None = None) -> dict[str
     if _seen is None:
         _seen = set()
 
-    # Annotated[T, ...] — unwrap to the base type
+    # Annotated[T, ...] - unwrap to the base type
     origin = get_origin(annotation)
     if origin is Annotated:
         return _annotation_to_schema(get_args(annotation)[0], _seen)
 
-    # Final[T] — unwrap to T
+    # Final[T] - unwrap to T
     if hasattr(annotation, '__origin__') and annotation.__origin__ is Final:
         return _annotation_to_schema(get_args(annotation)[0], _seen)
 
@@ -133,7 +126,7 @@ def _annotation_to_schema(annotation: Any, _seen: set | None = None) -> dict[str
                 schema['additionalProperties'] = val_schema
         return schema
 
-    # Dataclass — recursive field resolution
+    # Dataclass - recursive field resolution
     if dataclasses.is_dataclass(annotation) and isinstance(annotation, type):
         if id(annotation) in _seen:
             return {}
@@ -160,7 +153,7 @@ def _annotation_to_schema(annotation: Any, _seen: set | None = None) -> dict[str
             'additionalProperties': False,
         }
 
-    # TypedDict — explicit property schema
+    # TypedDict - explicit property schema
     if isinstance(annotation, type) and hasattr(annotation, '__required_keys__'):
         if id(annotation) in _seen:
             return {}
@@ -221,10 +214,12 @@ def build_json_schema(fn: AsyncOrSyncFunction) -> dict[str, Any]:
         hints = get_type_hints(fn, include_extras=True)
     else:
         hints = get_type_hints(fn)
-    param_docs = _parse_param_docs(fn)
+
+    parsed = _parse_docstring(inspect.getdoc(fn) or '')
+    param_docs = {p.arg_name: p.description or '' for p in parsed.params}
 
     properties: dict[str, Any] = {}
-    required: list[str] = []  # in strict mode — all parameters
+    required: list[str] = []
 
     for name, param in sig.parameters.items():
         if name in ('self', 'cls'):
@@ -234,22 +229,34 @@ def build_json_schema(fn: AsyncOrSyncFunction) -> dict[str, Any]:
         has_default = param.default is not inspect.Parameter.empty
         base_schema = _annotation_to_schema(annotation)
 
-        # optional - anyOf [type, null] so the LLM can explicitly pass null
         if has_default:
             prop = _make_strict_schema(base_schema)
         else:
             prop = base_schema
 
-        if description := param_docs.get(name):
+        description = param_docs.get(name) or ''
+
+        if has_default:
+            default_repr = repr(param.default)
+            if description:
+                description = f"{description} (default: {default_repr})"
+            else:
+                description = f"Default: {default_repr}"
+
+        if description:
             prop['description'] = description
 
         properties[name] = prop
-        required.append(name)  # always
+        required.append(name)
 
-    description = (inspect.getdoc(fn) or '').replace('\n', ' ').strip()
+    parts = []
+    if parsed.short_description:
+        parts.append(parsed.short_description)
+    if parsed.long_description:
+        parts.append(parsed.long_description)
+    description = '\n\n'.join(parts)
 
     return {
-        'type': 'function',
         'name': fn.__name__,
         'description': description,
         'strict': True,
